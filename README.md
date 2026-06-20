@@ -19,6 +19,45 @@ StockLens is an AI-assisted full-stack equity research platform. It combines mar
 - Multi-factor stock score using momentum, value, quality, volatility, size, and volume
 - Latest-news ingestion and OpenAI-based impact analysis with fallback scoring
 
+## Screenshots
+
+### Dashboard main page
+
+![StockLens dashboard main page](docs/screenshots/dashboard-main.png)
+
+### Stock search and candlestick chart
+
+![Stock search with candlestick chart and trade levels](docs/screenshots/candlestick-chart.png)
+
+### Multi-factor scorecard and buy/sell levels
+
+![Multi-factor model, volume flow, and buy/sell point analysis](docs/screenshots/multi-factor-scorecard.png)
+
+### AI news impact analysis
+
+![AI news impact analysis and latest-news insight panel](docs/screenshots/ai-news-impact.png)
+
+## Sample Output
+
+Example values from an `NVDA` run. Results change as market data, options chains, and news update.
+
+```text
+Ticker: NVDA
+Technical trend: Uptrend
+Bullish probability: 77%
+Expected return 12M: +18.0%
+Volatility: 35.4% annualized
+Max drawdown: -20.2%
+Relative strength vs SPY: +11.3% over 6M, +19.6% over 12M
+Options put/call volume: 0.70
+Stock volume: 1.4x 20D average
+Multi-factor score: Strong 71/100
+News impact: Mixed, confidence 35/100
+Buy zone: $196.70 - $208.56
+Trim / sell zone: $232.28 - $243.81
+Risk stop: $193.41 close
+```
+
 ## Tech Stack
 
 - Backend: Python standard library HTTP server
@@ -28,10 +67,26 @@ StockLens is an AI-assisted full-stack equity research platform. It combines mar
 - News data: Google News RSS
 - AI analysis: OpenAI Responses API
 
+## Architecture
+
+```text
+Frontend: static/index.html, static/app.js, static/styles.css
+Backend: main.py HTTP API using Python ThreadingHTTPServer
+Database: SQLite tables for users, sessions, user_settings, and transcripts
+Data: Yahoo Finance chart/options/fundamentals endpoints and Google News RSS
+AI: OpenAI Responses API for structured news impact analysis, with local fallback scoring
+```
+
 ## Project Structure
 
 ```text
 stocklens/
+├── docs/
+│   └── screenshots/
+│       ├── dashboard-main.png
+│       ├── candlestick-chart.png
+│       ├── multi-factor-scorecard.png
+│       └── ai-news-impact.png
 ├── main.py
 ├── static/
 │   ├── index.html
@@ -102,3 +157,12 @@ docker run -p 8000:8000 \
 - Session cookies are HttpOnly and SameSite=Lax.
 - For production, prefer a server-side `OPENAI_API_KEY` environment variable instead of user-entered API keys.
 - Use HTTPS before setting `STOCKLENS_COOKIE_SECURE=1`.
+
+## Limitations
+
+- StockLens is a research prototype and is not financial advice.
+- Public market-data endpoints may be delayed, incomplete, rate-limited, or unavailable.
+- OpenAI output is scenario analysis, not a trading instruction or guaranteed forecast.
+- Scores are heuristic signals and should be validated with independent research before use.
+- The local server is not a production-grade trading platform or brokerage execution system.
+- Public-news and headline analysis can miss full article context, valuation impact, and whether a catalyst is already priced in.
