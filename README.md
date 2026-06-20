@@ -102,8 +102,3 @@ docker run -p 8000:8000 \
 - Session cookies are HttpOnly and SameSite=Lax.
 - For production, prefer a server-side `OPENAI_API_KEY` environment variable instead of user-entered API keys.
 - Use HTTPS before setting `STOCKLENS_COOKIE_SECURE=1`.
-
-## Resume Summary
-
-Built StockLens, an AI-assisted full-stack equity research platform using Python, JavaScript, SQLite, and OpenAI API. Implemented user authentication, personalized research storage, market-data ingestion, technical analysis, options-flow metrics, institutional-flow proxies, multi-factor stock scoring, and AI-driven news analysis to generate ticker-specific trend, risk, and buy/sell insights.
-
