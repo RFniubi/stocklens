@@ -1,0 +1,545 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>StockLens</title>
+    <link rel="stylesheet" href="/static/styles.css">
+  </head>
+  <body>
+    <section class="auth-shell" id="authShell">
+      <div class="auth-panel">
+        <p class="eyebrow">StockLens</p>
+        <h1 id="authTitle">Log in to your workspace</h1>
+        <p class="auth-copy" id="authCopy">Your watch history, transcripts, settings, and AI keys stay separated by account.</p>
+        <form class="auth-form" id="authForm">
+          <label>
+            <span>Email</span>
+            <input id="authEmail" type="email" autocomplete="email" required placeholder="you@example.com">
+          </label>
+          <label id="displayNameWrap" hidden>
+            <span>Name</span>
+            <input id="authDisplayName" type="text" autocomplete="name" placeholder="Richard">
+          </label>
+          <label>
+            <span>Password</span>
+            <input id="authPassword" type="password" autocomplete="current-password" required minlength="8" placeholder="8+ characters">
+          </label>
+          <button type="submit" id="authSubmit">Log in</button>
+          <small class="auth-status" id="authStatus">Checking session...</small>
+        </form>
+        <button class="auth-switch" type="button" id="authSwitch">Create an account</button>
+      </div>
+    </section>
+
+    <div class="app-shell" id="appShell" hidden>
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">StockLens</p>
+          <h1>Market analysis workspace</h1>
+        </div>
+        <div class="header-actions">
+          <div class="account-bar">
+            <span id="userBadge">--</span>
+            <button type="button" id="logoutButton">Log out</button>
+          </div>
+          <form class="search" id="searchForm">
+            <label class="sr-only" for="symbolInput">Ticker symbol</label>
+            <div class="search-field">
+              <input
+                id="symbolInput"
+                name="symbol"
+                autocomplete="off"
+                spellcheck="false"
+                value="NVDA"
+                placeholder="AAPL, NVDA, SPY"
+                aria-controls="searchHistory"
+                aria-expanded="false"
+              >
+              <div class="search-history" id="searchHistory" role="listbox" hidden></div>
+            </div>
+            <button type="submit">Analyze</button>
+          </form>
+        </div>
+      </header>
+
+      <main>
+        <section class="toolbar" aria-label="Range controls">
+          <div class="segments" id="rangeControls">
+            <button type="button" data-range="1mo">1M</button>
+            <button type="button" data-range="3mo">3M</button>
+            <button type="button" data-range="6mo">6M</button>
+            <button type="button" data-range="1y" class="active">1Y</button>
+            <button type="button" data-range="2y">2Y</button>
+            <button type="button" data-range="5y">5Y</button>
+          </div>
+        </section>
+
+        <section class="status-strip" id="statusStrip">
+          <span id="statusText">Ready</span>
+          <span id="sourceText"></span>
+        </section>
+
+        <section class="metric-grid" id="metricGrid">
+          <article class="metric">
+            <span>Last price</span>
+            <strong id="lastPrice">--</strong>
+            <small id="lastDate">--</small>
+          </article>
+          <article class="metric">
+            <span>Day move</span>
+            <strong id="dayMove">--</strong>
+            <small id="dayMoveAbs">--</small>
+          </article>
+          <article class="metric">
+            <span>Range return</span>
+            <strong id="rangeReturn">--</strong>
+            <small id="rangeDates">--</small>
+          </article>
+          <article class="metric">
+            <span>Trend</span>
+            <strong id="trendLabel">--</strong>
+            <small id="trendScore">--</small>
+          </article>
+        </section>
+
+        <section class="score-section" aria-label="Investment agent scorecard">
+          <div class="section-head">
+            <h2>Agent scorecard</h2>
+            <div class="score-output">
+              <span>Bullish probability <strong id="bullishProbability">--</strong></span>
+              <span>Expected return 12M <strong id="expectedReturn">--</strong></span>
+              <span>Risk <strong id="riskLevel">--</strong></span>
+            </div>
+          </div>
+          <div class="score-grid">
+            <article class="score-card">
+              <span>Fundamental</span>
+              <strong id="fundamentalScore">--</strong>
+              <small id="fundamentalScoreNote">ROIC + FCF</small>
+            </article>
+            <article class="score-card">
+              <span>Sentiment</span>
+              <strong id="sentimentScore">--</strong>
+              <small id="sentimentScoreNote">Call + news</small>
+            </article>
+            <article class="score-card">
+              <span>Macro</span>
+              <strong id="macroScore">--</strong>
+              <small id="macroScoreNote">SPY + VIX</small>
+            </article>
+            <article class="score-card">
+              <span>Options</span>
+              <strong id="optionsScore">--</strong>
+              <small id="optionsScoreNote">PCR + IV + gamma</small>
+            </article>
+            <article class="score-card">
+              <span>RS</span>
+              <strong id="relativeStrengthScore">--</strong>
+              <small id="relativeStrengthScoreNote">6M / 12M</small>
+            </article>
+            <article class="score-card">
+              <span>Revision</span>
+              <strong id="revisionScore">--</strong>
+              <small id="revisionScoreNote">EPS trend</small>
+            </article>
+            <article class="score-card">
+              <span>Flow</span>
+              <strong id="flowScore">--</strong>
+              <small id="flowScoreNote">13F holders</small>
+            </article>
+            <article class="score-card total">
+              <span>Total</span>
+              <strong id="totalScore">--</strong>
+              <small id="totalScoreNote">Composite</small>
+            </article>
+          </div>
+        </section>
+
+        <section class="workspace">
+          <div class="chart-panel">
+            <div class="panel-head">
+              <div>
+                <h2 id="chartTitle">NVDA price history</h2>
+                <p id="chartSubtitle">Candles with trend, volatility, and trade levels</p>
+              </div>
+              <div class="legend">
+                <span><i class="candle-key"></i>Candles</span>
+                <span><i class="line ma20"></i>SMA 20</span>
+                <span><i class="line ema21"></i>EMA 21</span>
+                <span><i class="line ma50"></i>SMA 50</span>
+                <span><i class="line band"></i>BB</span>
+              </div>
+            </div>
+            <div class="chart-wrap">
+              <svg id="priceChart" viewBox="0 0 920 430" role="img" aria-label="Stock price chart"></svg>
+              <div class="tooltip" id="tooltip" hidden></div>
+            </div>
+          </div>
+
+          <aside class="side-panel">
+            <section class="insight">
+              <h2>Next week</h2>
+              <p id="outlookText">--</p>
+              <dl>
+                <div>
+                  <dt>Expected band</dt>
+                  <dd id="expectedBand">--</dd>
+                </div>
+                <div>
+                  <dt>Support</dt>
+                  <dd id="supportLevel">--</dd>
+                </div>
+                <div>
+                  <dt>Resistance</dt>
+                  <dd id="resistanceLevel">--</dd>
+                </div>
+              </dl>
+            </section>
+
+            <section class="insight">
+              <h2>Signals</h2>
+              <ul class="signal-list" id="signalList"></ul>
+            </section>
+
+            <section class="insight">
+              <h2>Risk</h2>
+              <dl>
+                <div>
+                  <dt>RSI 14</dt>
+                  <dd id="rsiValue">--</dd>
+                </div>
+                <div>
+                  <dt>MACD</dt>
+                  <dd id="macdValue">--</dd>
+                </div>
+                <div>
+                  <dt>ATR 14</dt>
+                  <dd id="atrValue">--</dd>
+                </div>
+                <div>
+                  <dt>Volume</dt>
+                  <dd id="volumeTrend">--</dd>
+                </div>
+                <div>
+                  <dt>Volatility</dt>
+                  <dd id="volatilityValue">--</dd>
+                </div>
+                <div>
+                  <dt>Max drawdown</dt>
+                  <dd id="drawdownValue">--</dd>
+                </div>
+                <div>
+                  <dt>52W range</dt>
+                  <dd id="weekRange">--</dd>
+                </div>
+              </dl>
+            </section>
+          </aside>
+        </section>
+
+        <section class="research-grid" aria-label="High-value signals">
+          <article class="research-card">
+            <div class="card-head">
+              <h2>Earnings Call NLP</h2>
+              <strong id="callSentimentLabel">--</strong>
+            </div>
+            <textarea id="transcriptInput" spellcheck="true" placeholder="Paste earnings-call transcript, prepared remarks, or Q&A notes"></textarea>
+            <div class="nlp-grid" aria-label="Earnings call section scores">
+              <div>
+                <span>CEO</span>
+                <strong id="ceoCallScore">--</strong>
+              </div>
+              <div>
+                <span>CFO</span>
+                <strong id="cfoCallScore">--</strong>
+              </div>
+              <div>
+                <span>Q&A</span>
+                <strong id="qaCallScore">--</strong>
+              </div>
+              <div>
+                <span>Keywords</span>
+                <strong id="keywordCoverageScore">--</strong>
+              </div>
+            </div>
+            <div class="keyword-grid" id="callKeywordGrid"></div>
+            <ul class="signal-list compact" id="institutionalFocus"></ul>
+            <ul class="signal-list compact" id="sentimentDetails"></ul>
+          </article>
+
+          <article class="research-card">
+            <div class="card-head">
+              <h2>ROIC + FCF growth</h2>
+              <strong id="qualityLabel">--</strong>
+            </div>
+            <dl>
+              <div>
+                <dt>ROIC</dt>
+                <dd id="roicValue">--</dd>
+              </div>
+              <div>
+                <dt>FCF growth</dt>
+                <dd id="fcfGrowthValue">--</dd>
+              </div>
+              <div>
+                <dt>Free cash flow</dt>
+                <dd id="freeCashFlowValue">--</dd>
+              </div>
+              <div>
+                <dt>FCF CAGR</dt>
+                <dd id="fcfCagrValue">--</dd>
+              </div>
+            </dl>
+          </article>
+
+          <article class="research-card">
+            <div class="card-head">
+              <h2>Options market</h2>
+              <strong id="optionsLabel">--</strong>
+            </div>
+            <dl>
+              <div>
+                <dt>Put/call OI</dt>
+                <dd id="putCallOi">--</dd>
+              </div>
+              <div>
+                <dt>Put/call volume</dt>
+                <dd id="putCallVolume">--</dd>
+              </div>
+              <div>
+                <dt>ATM IV</dt>
+                <dd id="atmIv">--</dd>
+              </div>
+              <div>
+                <dt>Gamma proxy</dt>
+                <dd id="gammaProxy">--</dd>
+              </div>
+              <div>
+                <dt>Expected move</dt>
+                <dd id="optionsMove">--</dd>
+              </div>
+            </dl>
+          </article>
+
+          <article class="research-card">
+            <div class="card-head">
+              <h2>Volume flow</h2>
+              <strong id="volumeFlowLabel">--</strong>
+            </div>
+            <dl>
+              <div>
+                <dt>Stock volume</dt>
+                <dd id="stockVolumeValue">--</dd>
+              </div>
+              <div>
+                <dt>20D avg volume</dt>
+                <dd id="avgVolumeValue">--</dd>
+              </div>
+              <div>
+                <dt>Stock volume ratio</dt>
+                <dd id="stockVolumeRatio">--</dd>
+              </div>
+              <div>
+                <dt>Dollar volume</dt>
+                <dd id="dollarVolumeValue">--</dd>
+              </div>
+              <div>
+                <dt>Option volume</dt>
+                <dd id="totalOptionVolume">--</dd>
+              </div>
+              <div>
+                <dt>Option / stock</dt>
+                <dd id="optionStockVolumeRatio">--</dd>
+              </div>
+              <div>
+                <dt>Call / put volume</dt>
+                <dd id="callPutVolumeValue">--</dd>
+              </div>
+            </dl>
+            <ul class="signal-list compact" id="volumeFlowDetails"></ul>
+          </article>
+
+          <article class="research-card">
+            <div class="card-head">
+              <h2>Multi-factor model</h2>
+              <strong id="multiFactorLabel">--</strong>
+            </div>
+            <p class="factor-formula" id="factorFormula">0.30 Momentum + 0.20 Value + 0.20 Quality + 0.15 Volatility + 0.10 Size + 0.05 Volume</p>
+            <div class="factor-grid" aria-label="Multi-factor scores">
+              <div>
+                <span>Momentum</span>
+                <strong id="factorMomentum">--</strong>
+              </div>
+              <div>
+                <span>Value</span>
+                <strong id="factorValue">--</strong>
+              </div>
+              <div>
+                <span>Quality</span>
+                <strong id="factorQuality">--</strong>
+              </div>
+              <div>
+                <span>Volatility</span>
+                <strong id="factorVolatility">--</strong>
+              </div>
+              <div>
+                <span>Size</span>
+                <strong id="factorSize">--</strong>
+              </div>
+              <div>
+                <span>Volume</span>
+                <strong id="factorVolume">--</strong>
+              </div>
+            </div>
+            <ul class="signal-list compact" id="factorDetails"></ul>
+          </article>
+
+          <article class="research-card trade-card">
+            <div class="card-head">
+              <h2>Buy / Sell points</h2>
+              <strong id="tradeBiasLabel">--</strong>
+            </div>
+            <dl>
+              <div>
+                <dt>Buy zone</dt>
+                <dd id="buyZone">--</dd>
+              </div>
+              <div>
+                <dt>Buy point date</dt>
+                <dd id="buyPointDate">--</dd>
+              </div>
+              <div>
+                <dt>Add trigger</dt>
+                <dd id="addTrigger">--</dd>
+              </div>
+              <div>
+                <dt>Trim / sell</dt>
+                <dd id="trimZone">--</dd>
+              </div>
+              <div>
+                <dt>Sell point date</dt>
+                <dd id="sellPointDate">--</dd>
+              </div>
+              <div>
+                <dt>Risk stop</dt>
+                <dd id="riskStop">--</dd>
+              </div>
+              <div>
+                <dt>Last updated</dt>
+                <dd id="signalUpdatedAt">--</dd>
+              </div>
+            </dl>
+            <h3>Why this setup</h3>
+            <ul class="signal-list compact" id="tradePlanDetails"></ul>
+            <h3>Up / down drivers</h3>
+            <ul class="signal-list compact" id="moveReasonList"></ul>
+            <div class="alert-row">
+              <label class="sr-only" for="alertEmail">Email</label>
+              <input id="alertEmail" type="email" autocomplete="email" placeholder="email@example.com">
+              <button type="button" id="emailAlertButton">Email update</button>
+              <button type="button" id="refreshButton">Refresh now</button>
+            </div>
+            <label class="toggle-row">
+              <input id="autoEmailToggle" type="checkbox">
+              <span>Auto draft on signal change</span>
+            </label>
+            <small class="alert-status" id="alertStatus">--</small>
+          </article>
+
+          <article class="research-card">
+            <div class="card-head">
+              <h2>First-tier alpha</h2>
+              <strong id="alphaLabel">--</strong>
+            </div>
+            <dl>
+              <div>
+                <dt>RS 6M vs SPY</dt>
+                <dd id="rs6mValue">--</dd>
+              </div>
+              <div>
+                <dt>RS 12M vs SPY</dt>
+                <dd id="rs12mValue">--</dd>
+              </div>
+              <div>
+                <dt>EPS rev 30D</dt>
+                <dd id="epsRevisionValue">--</dd>
+              </div>
+              <div>
+                <dt>Inst. net buying</dt>
+                <dd id="institutionalBuyingValue">--</dd>
+              </div>
+            </dl>
+            <ul class="signal-list compact" id="alphaDetails"></ul>
+          </article>
+
+          <article class="research-card">
+            <div class="card-head">
+              <h2>News insight</h2>
+              <strong id="newsToneLabel">--</strong>
+            </div>
+            <dl>
+              <div>
+                <dt>Latest news</dt>
+                <dd id="latestNewsDate">--</dd>
+              </div>
+              <div>
+                <dt>News driver</dt>
+                <dd id="newsDriverLabel">--</dd>
+              </div>
+            </dl>
+            <ul class="signal-list compact" id="newsInsightList"></ul>
+            <a class="news-link" id="googleNewsLink" href="#" target="_blank" rel="noopener">Google News</a>
+          </article>
+
+          <article class="research-card ai-news-card">
+            <div class="card-head">
+              <h2>AI News Analyst</h2>
+              <strong id="aiNewsLabel">--</strong>
+            </div>
+            <dl>
+              <div>
+                <dt>Impact</dt>
+                <dd id="aiNewsImpact">--</dd>
+              </div>
+              <div>
+                <dt>Confidence</dt>
+                <dd id="aiNewsConfidence">--</dd>
+              </div>
+              <div>
+                <dt>Model</dt>
+                <dd id="aiNewsModel">--</dd>
+              </div>
+            </dl>
+            <p class="ai-news-snapshot" id="aiNewsSnapshot">Latest news snapshot: --</p>
+            <div class="ai-key-row">
+              <label class="sr-only" for="openaiKeyInput">OpenAI API key</label>
+              <input id="openaiKeyInput" type="password" autocomplete="off" spellcheck="false" placeholder="OpenAI API key">
+              <button type="button" id="openaiKeySave">Save</button>
+              <button type="button" id="openaiKeyClear">Clear</button>
+            </div>
+            <small class="alert-status" id="openaiKeyStatus">Checking OpenAI key...</small>
+            <p class="ai-summary" id="aiNewsSummary">--</p>
+            <h3>Why it matters</h3>
+            <ul class="signal-list compact" id="aiNewsWhy"></ul>
+            <h3>Catalysts</h3>
+            <ul class="signal-list compact" id="aiNewsCatalysts"></ul>
+            <h3>Risks</h3>
+            <ul class="signal-list compact" id="aiNewsRisks"></ul>
+            <h3>Time frame</h3>
+            <ul class="signal-list compact" id="aiNewsHorizons"></ul>
+            <h3>Sources</h3>
+            <ul class="source-list" id="aiNewsSources"></ul>
+          </article>
+        </section>
+      </main>
+    </div>
+
+    <footer>
+      <span>Market data is delayed and may be incomplete.</span>
+      <span>Scenario analysis only, not financial advice.</span>
+    </footer>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

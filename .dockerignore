@@ -1,0 +1,12 @@
+.git
+.venv
+__pycache__
+.DS_Store
+.env
+.stocklens
+*.sqlite
+*.sqlite3
+*.db
+data
+outputs
+

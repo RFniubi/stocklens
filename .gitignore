@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local app/runtime state
+.env
+.stocklens/
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+*.pid
+data/
+
+# Secrets
+openai_api_key
+*_api_key
+*.pem
+*.key
+
+# OS/editor files
+.DS_Store
+.idea/
+.vscode/
+
+# Build/artifact files
+*.app/
+*.command
+outputs/
+screenshots/tmp/
+
