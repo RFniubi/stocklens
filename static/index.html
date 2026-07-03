@@ -524,12 +524,12 @@
 
           <article class="research-card ai-news-card">
             <div class="card-head">
-              <h2>AI News Analyst</h2>
+              <h2>AI Analysis Summary</h2>
               <strong id="aiNewsLabel">--</strong>
             </div>
             <dl>
               <div>
-                <dt>Impact</dt>
+                <dt>Overall score</dt>
                 <dd id="aiNewsImpact">--</dd>
               </div>
               <div>
@@ -542,15 +542,9 @@
               </div>
             </dl>
             <p class="ai-news-snapshot" id="aiNewsSnapshot">Latest news snapshot: --</p>
-            <div class="ai-key-row">
-              <label class="sr-only" for="openaiKeyInput">OpenAI API key</label>
-              <input id="openaiKeyInput" type="password" autocomplete="off" spellcheck="false" placeholder="OpenAI API key">
-              <button type="button" id="openaiKeySave">Save</button>
-              <button type="button" id="openaiKeyClear">Clear</button>
-            </div>
-            <small class="alert-status" id="openaiKeyStatus">Checking OpenAI key...</small>
+            <small class="alert-status" id="openaiKeyStatus">Automatic analysis mode</small>
             <p class="ai-summary" id="aiNewsSummary">--</p>
-            <h3>Why it matters</h3>
+            <h3>Overall read</h3>
             <ul class="signal-list compact" id="aiNewsWhy"></ul>
             <h3>Catalysts</h3>
             <ul class="signal-list compact" id="aiNewsCatalysts"></ul>

@@ -10,6 +10,7 @@ const state = {
   researchError: null,
   aiNewsAnalysis: null,
   aiNewsError: null,
+  overallContext: null,
   tradePlan: null,
   searchHistoryOpen: false,
 };
@@ -1335,6 +1336,7 @@ async function loadStock() {
   state.researchError = null;
   state.aiNewsAnalysis = null;
   state.aiNewsError = null;
+  state.overallContext = null;
   state.tradePlan = null;
   setStatus(`Loading ${symbol}...`);
   renderResearch();
@@ -1478,12 +1480,12 @@ function renderAiSources(payload, sourceIds) {
 function renderOpenAiKeyStatus(status) {
   if (!els.openaiKeyStatus) return;
   if (!status) {
-    els.openaiKeyStatus.textContent = "OpenAI key status unknown.";
+    els.openaiKeyStatus.textContent = "Automatic analysis mode.";
     return;
   }
   els.openaiKeyStatus.textContent = status.configured
-    ? `OpenAI key configured via ${status.source}; model ${status.model}.`
-    : "OpenAI key not configured. Paste a key here to enable direct AI analysis.";
+    ? `Automatic analysis: OpenAI model ${status.model}.`
+    : "Automatic analysis: local news model.";
 }
 
 async function refreshOpenAiKeyStatus() {
@@ -1493,7 +1495,9 @@ async function refreshOpenAiKeyStatus() {
     if (!response.ok) throw new Error(payload.error || "Could not check OpenAI key.");
     renderOpenAiKeyStatus(payload);
   } catch (error) {
-    els.openaiKeyStatus.textContent = error.message;
+    if (els.openaiKeyStatus) {
+      els.openaiKeyStatus.textContent = "Automatic analysis: local news model.";
+    }
   }
 }
 
@@ -1515,6 +1519,7 @@ async function refreshAiNewsAnalysis() {
 }
 
 async function saveOpenAiKeyFromUi() {
+  if (!els.openaiKeyInput || !els.openaiKeyStatus) return;
   const apiKey = els.openaiKeyInput.value.trim();
   if (!apiKey) {
     els.openaiKeyStatus.textContent = "Paste an OpenAI API key first.";
@@ -1538,6 +1543,7 @@ async function saveOpenAiKeyFromUi() {
 }
 
 async function clearOpenAiKeyFromUi() {
+  if (!els.openaiKeyStatus) return;
   els.openaiKeyStatus.textContent = "Clearing local OpenAI key...";
   try {
     const response = await fetch("/api/openai-key", {
@@ -2422,8 +2428,35 @@ function renderNewsInsights(research, analysis, sentiment) {
 
 function renderAiNewsAnalysis() {
   const payload = state.aiNewsAnalysis;
-  const analysis = payload?.analysis;
-  if (!analysis) {
+  const newsAnalysis = payload?.analysis;
+  const overall = buildOverallSummary(newsAnalysis);
+  if (overall) {
+    const context = state.overallContext;
+    const modelLabel = newsAnalysis?.source === "OpenAI Responses API"
+      ? "OpenAI + StockLens factor model"
+      : "StockLens local factor/news model";
+    els.aiNewsLabel.textContent = `${overall.direction} ${Math.round(context.totalScore)}`;
+    els.aiNewsLabel.classList.remove("positive", "negative", "neutral");
+    els.aiNewsLabel.classList.add(overall.tone === "good" ? "positive" : overall.tone === "bad" ? "negative" : "neutral");
+    els.aiNewsImpact.textContent = `${Math.round(context.totalScore)}/100`;
+    els.aiNewsConfidence.textContent = `${Math.round(overall.confidence)}/100`;
+    els.aiNewsModel.textContent = modelLabel;
+    els.aiNewsSnapshot.textContent = payload ? formatNewsSnapshot(payload) : "Latest news snapshot: loading latest headlines...";
+    if (els.openaiKeyStatus) {
+      els.openaiKeyStatus.textContent = newsAnalysis?.source === "OpenAI Responses API"
+        ? "Automatic analysis: OpenAI news layer plus local factor model."
+        : "Automatic analysis: local factor/news model.";
+    }
+    els.aiNewsSummary.textContent = overall.summary;
+    els.aiNewsWhy.replaceChildren(...listItems(overall.overallRead));
+    els.aiNewsCatalysts.replaceChildren(...listItems(overall.catalysts));
+    els.aiNewsRisks.replaceChildren(...listItems(overall.risks));
+    els.aiNewsHorizons.replaceChildren(...listItems(overall.horizons));
+    renderAiSources(payload, newsAnalysis?.sourcesUsed);
+    return;
+  }
+
+  if (!newsAnalysis) {
     els.aiNewsLabel.textContent = state.aiNewsError ? "Unavailable" : "Loading";
     els.aiNewsLabel.classList.remove("positive", "negative", "neutral");
     els.aiNewsLabel.classList.add(state.aiNewsError ? "negative" : "neutral");
@@ -2440,48 +2473,46 @@ function renderAiNewsAnalysis() {
     return;
   }
 
-  const tone = toneForDirection(analysis.direction, analysis.impactScore);
-  const isOpenAi = analysis.source === "OpenAI Responses API";
-  els.aiNewsLabel.textContent = isOpenAi
-    ? `${analysis.direction || "Mixed"} ${Math.round(analysis.impactScore || 0)}`
-    : "Fallback";
+  const tone = toneForDirection(newsAnalysis.direction, newsAnalysis.impactScore);
+  const isOpenAi = newsAnalysis.source === "OpenAI Responses API";
+  els.aiNewsLabel.textContent = `${newsAnalysis.direction || "Mixed"} ${Math.round(newsAnalysis.impactScore || 0)}`;
   els.aiNewsLabel.classList.remove("positive", "negative", "neutral");
-  els.aiNewsLabel.classList.add(isOpenAi ? (tone === "good" ? "positive" : tone === "bad" ? "negative" : "neutral") : "neutral");
-  els.aiNewsImpact.textContent = Number.isFinite(analysis.impactScore)
-    ? `${Math.round(analysis.impactScore)}/100`
+  els.aiNewsLabel.classList.add(tone === "good" ? "positive" : tone === "bad" ? "negative" : "neutral");
+  els.aiNewsImpact.textContent = Number.isFinite(newsAnalysis.impactScore)
+    ? `${Math.round(newsAnalysis.impactScore)}/100`
     : "--";
-  els.aiNewsConfidence.textContent = Number.isFinite(analysis.confidence)
-    ? `${Math.round(analysis.confidence)}/100`
+  els.aiNewsConfidence.textContent = Number.isFinite(newsAnalysis.confidence)
+    ? `${Math.round(newsAnalysis.confidence)}/100`
     : "--";
   els.aiNewsModel.textContent = isOpenAi
-    ? analysis.model || "OpenAI"
-    : `${analysis.model || "local fallback"} (OpenAI not used)`;
+    ? newsAnalysis.model || "OpenAI"
+    : newsAnalysis.model || "StockLens local model";
   els.aiNewsSnapshot.textContent = formatNewsSnapshot(payload);
-  els.aiNewsSummary.textContent = analysis.summary || "--";
+  els.aiNewsSummary.textContent = newsAnalysis.summary || "--";
 
-  const sourceTone = analysis.source === "OpenAI Responses API" ? "good" : "watch";
+  const sourceTone = newsAnalysis.source === "OpenAI Responses API" ? "good" : "watch";
   els.aiNewsWhy.replaceChildren(
     ...listItems([
-      { tone: sourceTone, text: `Source: ${analysis.source || "AI analysis"}.` },
-      ...(analysis.whyMove || []).map((text) => ({ tone, text })),
-      ...(analysis.priceVolumeRead ? [{ tone: "watch", text: analysis.priceVolumeRead }] : []),
-      ...(analysis.optionsRead ? [{ tone: "watch", text: analysis.optionsRead }] : []),
+      { tone: sourceTone, text: `Source: ${newsAnalysis.source || "AI analysis"}.` },
+      ...(newsAnalysis.whyMove || []).map((text) => ({ tone, text })),
+      ...(newsAnalysis.priceVolumeRead ? [{ tone: "watch", text: newsAnalysis.priceVolumeRead }] : []),
+      ...(newsAnalysis.optionsRead ? [{ tone: "watch", text: newsAnalysis.optionsRead }] : []),
     ].slice(0, 7)),
   );
   els.aiNewsCatalysts.replaceChildren(
-    ...listItems((analysis.catalysts || []).map((text) => ({ tone, text }))),
+    ...listItems((newsAnalysis.catalysts || []).map((text) => ({ tone, text }))),
   );
   els.aiNewsRisks.replaceChildren(
-    ...listItems((analysis.risks || []).map((text) => ({ tone: "bad", text }))),
+    ...listItems((newsAnalysis.risks || []).map((text) => ({ tone: "bad", text }))),
   );
   els.aiNewsHorizons.replaceChildren(
     ...listItems([
-      { tone: "watch", text: `1D: ${analysis.horizons?.oneDay || "--"}` },
-      { tone: "watch", text: `1W: ${analysis.horizons?.oneWeek || "--"}` },
-      { tone: "watch", text: `1M: ${analysis.horizons?.oneMonth || "--"}` },
+      { tone: "watch", text: `1D: ${newsAnalysis.horizons?.oneDay || "--"}` },
+      { tone: "watch", text: `1W: ${newsAnalysis.horizons?.oneWeek || "--"}` },
+      { tone: "watch", text: `1M: ${newsAnalysis.horizons?.oneMonth || "--"}` },
     ]),
   );
-  renderAiSources(payload, analysis.sourcesUsed);
+  renderAiSources(payload, newsAnalysis.sourcesUsed);
 }
 
 function renderVolumeFlow(analysis, research, currency) {
@@ -2567,6 +2598,138 @@ function renderScenarioForecast(forecast) {
   els.scenarioDetails.replaceChildren(...listItems(forecast.details));
 }
 
+function overallDirectionFromContext(context) {
+  if (!context) return "Mixed";
+  if (context.expectedReturn >= 8 && context.totalScore >= 62 && context.risk !== "High") return "Bullish";
+  if (context.expectedReturn <= -5 || context.totalScore <= 42) return "Bearish";
+  if (context.totalScore >= 58 && context.expectedReturn > 0) return "Constructive";
+  return "Mixed";
+}
+
+function toneForOverallDirection(direction) {
+  if (direction === "Bullish" || direction === "Constructive") return "good";
+  if (direction === "Bearish") return "bad";
+  return "watch";
+}
+
+function scoreRowsFromContext(context) {
+  if (!context) return [];
+  return [
+    { key: "fundamental", label: "Fundamental", score: context.fundamentalScore, note: "ROIC + FCF quality" },
+    { key: "sentiment", label: "Sentiment", score: context.sentimentScore, note: "call/news tone" },
+    { key: "macro", label: "Macro", score: context.macroScore, note: "SPY + VIX backdrop" },
+    { key: "options", label: "Options", score: context.optionsScore, note: "put/call, IV, gamma" },
+    { key: "rs", label: "Relative strength", score: context.relativeStrengthScore, note: "versus SPY" },
+    { key: "revision", label: "Revision", score: context.revisionScore, note: "EPS estimate trend" },
+    { key: "flow", label: "Institutional flow", score: context.flowScore, note: "holder accumulation" },
+    { key: "technical", label: "Technical", score: context.technicalScore, note: context.analysis?.trend || "price trend" },
+    { key: "multiFactor", label: "Multi-factor", score: context.factorModel?.total, note: "momentum/value/quality/risk" },
+  ].filter((row) => Number.isFinite(row.score));
+}
+
+function buildOverallSummary(payloadAnalysis) {
+  const context = state.overallContext;
+  if (!context) return null;
+
+  const rows = scoreRowsFromContext(context);
+  const direction = overallDirectionFromContext(context);
+  const tone = toneForOverallDirection(direction);
+  const newsDirection = payloadAnalysis?.direction || "Mixed";
+  const newsScore = Number.isFinite(payloadAnalysis?.impactScore) ? payloadAnalysis.impactScore : null;
+  const confidenceInputs = [
+    [context.forecast?.confidence, 0.65],
+    [payloadAnalysis?.confidence, payloadAnalysis ? 0.25 : 0],
+    [context.totalScore, 0.1],
+  ];
+  const confidence = weightedScore(confidenceInputs, context.forecast?.confidence || 50);
+  const strongest = [...rows].sort((a, b) => b.score - a.score).slice(0, 3);
+  const weakest = [...rows].sort((a, b) => a.score - b.score).slice(0, 3);
+  const last = context.analysis?.last?.close;
+  const support = context.analysis?.support;
+  const resistance = context.analysis?.resistance;
+  const currency = state.data?.currency || "USD";
+
+  const summary = [
+    `Conclusion: ${state.symbol} is ${direction.toLowerCase()} overall.`,
+    `The scenario model shows ${formatPercent(context.expectedReturn, 1)} expected 12M return with ${formatPercent(context.bullishProbability, 0).replace("+", "")} bullish probability.`,
+    `Main support comes from ${strongest.map((row) => `${row.label} ${Math.round(row.score)}`).join(", ")}.`,
+    newsScore !== null ? `Latest news tone is ${newsDirection.toLowerCase()} at ${Math.round(newsScore)}/100.` : "Latest news is not yet loaded.",
+  ].join(" ");
+
+  const overallRead = [
+    {
+      tone,
+      text: `Overall score ${Math.round(context.totalScore)}/100; forecast label ${context.forecast?.label || "--"}; risk is ${context.risk}.`,
+    },
+    {
+      tone: context.expectedReturn >= 6 ? "good" : context.expectedReturn <= -5 ? "bad" : "watch",
+      text: `Scenario-weighted expected return is ${formatPercent(context.expectedReturn, 1)}; bear case is ${formatPercent(context.forecast?.cases?.bear?.return, 1)}.`,
+    },
+    {
+      tone: context.factorModel?.total >= 70 ? "good" : context.factorModel?.total <= 45 ? "bad" : "watch",
+      text: `Multi-factor score is ${Math.round(context.factorModel?.total || 0)}/100, blending momentum, value, quality, volatility, size, and volume.`,
+    },
+    {
+      tone: payloadAnalysis ? toneForDirection(payloadAnalysis.direction, payloadAnalysis.impactScore) : "watch",
+      text: payloadAnalysis
+        ? `News layer reads ${newsDirection.toLowerCase()} with ${Math.round(newsScore || 0)}/100 impact.`
+        : "News layer is still loading; the conclusion currently relies on price, factor, flow, and options data.",
+    },
+    {
+      tone: context.analysis?.trend === "Uptrend" ? "good" : context.analysis?.trend === "Downtrend" ? "bad" : "watch",
+      text: `Technical trend is ${context.analysis?.trend || "--"}; current price is ${formatMoney(last, currency)} versus support ${formatMoney(support, currency)} and resistance ${formatMoney(resistance, currency)}.`,
+    },
+  ];
+
+  const catalysts = [
+    ...strongest.map((row) => ({
+      tone: row.score >= 70 ? "good" : "watch",
+      text: `${row.label}: ${Math.round(row.score)}/100 from ${row.note}.`,
+    })),
+    ...(payloadAnalysis?.catalysts || []).slice(0, 2).map((text) => ({ tone: "watch", text })),
+  ].slice(0, 5);
+
+  const risks = [
+    ...weakest
+      .filter((row) => row.score < 58)
+      .map((row) => ({
+        tone: row.score <= 45 ? "bad" : "watch",
+        text: `${row.label}: ${Math.round(row.score)}/100 is the weakest part of the setup.`,
+      })),
+    {
+      tone: "bad",
+      text: `Bear case is ${formatPercent(context.forecast?.cases?.bear?.return, 1)} if support fails, volatility expands, or news follow-through weakens.`,
+    },
+    ...(payloadAnalysis?.risks || []).slice(0, 2).map((text) => ({ tone: "bad", text })),
+  ].slice(0, 5);
+
+  const horizons = [
+    {
+      tone: "watch",
+      text: `1D: Watch whether price holds ${formatMoney(support, currency)} and whether volume confirms the next move.`,
+    },
+    {
+      tone: context.expectedReturn >= 6 ? "good" : "watch",
+      text: `1W: ${context.forecast?.breakpoint || "Use support/resistance breakpoints for confirmation."}`,
+    },
+    {
+      tone: direction === "Bearish" ? "bad" : "watch",
+      text: `1M: Re-check revisions, institutional flow, options put/call, and news tone before treating this as a durable trend.`,
+    },
+  ];
+
+  return {
+    direction,
+    tone,
+    confidence,
+    summary,
+    overallRead,
+    catalysts,
+    risks,
+    horizons,
+  };
+}
+
 function renderResearch() {
   const research = state.research;
   const analysis = state.analysis;
@@ -2618,6 +2781,28 @@ function renderResearch() {
     ? forecast.expectedReturn
     : clamp((total - 50) * 0.55, -30, 35);
   const risk = calculateRiskLevel(total, analysis, research, forecast);
+  state.overallContext = analysis
+    ? {
+        analysis,
+        research,
+        sentiment,
+        factorModel,
+        forecast,
+        totalScore: total,
+        alphaScore,
+        fundamentalScore,
+        sentimentScore,
+        macroScore,
+        optionsScore,
+        relativeStrengthScore,
+        revisionScore,
+        flowScore,
+        technicalScore,
+        bullishProbability,
+        expectedReturn,
+        risk,
+      }
+    : null;
 
   renderNewsInsights(research, analysis, sentiment);
   renderVolumeFlow(analysis, research, currency);
@@ -2708,6 +2893,7 @@ function renderResearch() {
     els.optionsScoreNote.textContent = "Unavailable";
     els.macroScoreNote.textContent = "Unavailable";
   }
+  renderAiNewsAnalysis();
 }
 
 function mapPoint(value, min, max, low, high) {
@@ -3079,20 +3265,26 @@ els.refreshButton.addEventListener("click", () => {
   loadStock();
 });
 
-els.openaiKeySave.addEventListener("click", () => {
-  saveOpenAiKeyFromUi();
-});
-
-els.openaiKeyClear.addEventListener("click", () => {
-  clearOpenAiKeyFromUi();
-});
-
-els.openaiKeyInput.addEventListener("keydown", (event) => {
-  if (event.key === "Enter") {
-    event.preventDefault();
+if (els.openaiKeySave) {
+  els.openaiKeySave.addEventListener("click", () => {
     saveOpenAiKeyFromUi();
-  }
-});
+  });
+}
+
+if (els.openaiKeyClear) {
+  els.openaiKeyClear.addEventListener("click", () => {
+    clearOpenAiKeyFromUi();
+  });
+}
+
+if (els.openaiKeyInput) {
+  els.openaiKeyInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      saveOpenAiKeyFromUi();
+    }
+  });
+}
 
 els.input.value = state.symbol;
 setAuthMode("login");

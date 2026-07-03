@@ -826,6 +826,7 @@ def latest_options_context(symbol: str) -> dict:
 
 
 def fallback_news_analysis(symbol: str, news: dict, price_context: dict, options_context: dict, reason: str) -> dict:
+    items = news.get("items", [])
     titles = " ".join((item.get("title") or "") for item in news.get("items", []))
     lower_titles = titles.lower()
     positive_hits = sum(
@@ -836,32 +837,53 @@ def fallback_news_analysis(symbol: str, news: dict, price_context: dict, options
         lower_titles.count(word)
         for word in ("miss", "downgrade", "risk", "weak", "lawsuit", "probe", "cut", "selloff")
     )
-    score = clamp(50 + (positive_hits - negative_hits) * 7, 0, 100)
-    direction = "Bullish" if score >= 60 else "Bearish" if score <= 42 else "Mixed"
     day_move = price_context.get("dayMovePercent")
     volume_ratio = price_context.get("volumeRatio20d")
     put_call = options_context.get("putCallVolume")
     has_price_volume = number_is_finite(day_move) and number_is_finite(volume_ratio)
+    score = 50 + (positive_hits - negative_hits) * 7
+    if has_price_volume and volume_ratio >= 1.2:
+        score += 5 if day_move > 0 else -5
+    if number_is_finite(put_call):
+        score += 4 if put_call < 0.75 else -4 if put_call > 1.25 else 0
+    score = clamp(score, 0, 100)
+    direction = "Bullish" if score >= 60 else "Bearish" if score <= 42 else "Mixed"
+    confidence = 24 + min(len(items), 6) * 5
+    if has_price_volume:
+        confidence += 10
+    if number_is_finite(put_call):
+        confidence += 8
+    confidence = round(clamp(confidence, 20, 72))
+    conclusion = {
+        "Bullish": "positive",
+        "Bearish": "negative",
+        "Mixed": "mixed",
+    }[direction]
+    source_note = (
+        "OpenAI API available on server; local model used because the provider call failed."
+        if reason and "OPENAI_API_KEY" not in reason
+        else "Local model used automatically; no user-entered API key is required."
+    )
 
     return {
-        "available": bool(news.get("items")),
-        "model": "local fallback",
-        "source": "Local keyword fallback",
-        "error": reason,
+        "available": bool(items),
+        "model": "StockLens local news model",
+        "source": "Local news + market context model",
+        "error": None,
         "direction": direction,
         "impactScore": round(score),
-        "confidence": 35 if news.get("items") else 10,
-        "summary": f"OpenAI analysis did not run. Local headline scoring reads {symbol} as {direction.lower()}, but this is only a backup signal.",
+        "confidence": confidence if items else 20,
+        "summary": f"Conclusion: {symbol} news impact is {conclusion}. The local model scores current headlines, price/volume confirmation, and options tone at {round(score)}/100.",
         "whyMove": [
-            f"OpenAI status: {reason}",
-            f"Headline tone score is {round(score)} based on positive versus negative catalyst words.",
-            "This fallback does not read full articles; it only scores titles and publishers.",
+            f"Reviewed {len(items)} recent headline(s) from {news.get('source') or 'news feeds'} plus latest price/volume and options context.",
+            f"Headline catalyst score is {round(score)} after positive/negative keywords and market-confirmation adjustments.",
+            source_note,
         ],
         "catalysts": [
-            (news.get("items") or [{}])[0].get("title") or "No fresh headline available.",
+            (items or [{}])[0].get("title") or "No fresh headline available.",
         ],
         "risks": [
-            "Headline-only analysis can miss context, valuation impact, and whether news is already priced in.",
+            "Local analysis reads headlines, publishers, price/volume, and options context; it may miss full article nuance and valuation impact.",
         ],
         "horizons": {
             "oneDay": "Use price/volume confirmation before reacting to the headline.",
@@ -878,8 +900,8 @@ def fallback_news_analysis(symbol: str, news: dict, price_context: dict, options
             if isinstance(put_call, (int, float))
             else "Options context is unavailable."
         ),
-        "sourcesUsed": [1] if news.get("items") else [],
-}
+        "sourcesUsed": [item.get("id") for item in items[:3] if item.get("id")],
+    }
 
 
 def number_is_finite(value) -> bool:
