@@ -17,6 +17,7 @@ StockLens is an AI-assisted full-stack equity research platform. It combines mar
 - Relative strength versus SPY
 - Earnings revision and institutional-flow proxy signals
 - Multi-factor stock score using momentum, value, quality, volatility, size, and volume
+- Scenario-weighted forecast model with bull/base/bear cases, confidence, and breakpoints
 - Latest-news ingestion and OpenAI-based impact analysis with fallback scoring
 
 ## Screenshots
@@ -52,6 +53,7 @@ Relative strength vs SPY: +11.3% over 6M, +19.6% over 12M
 Options put/call volume: 0.70
 Stock volume: 1.4x 20D average
 Multi-factor score: Strong 71/100
+Scenario forecast: Bull skew, base +16.1%, bull +32.9%, bear -13.9%
 News impact: Mixed, confidence 35/100
 Buy zone: $196.70 - $208.56
 Trim / sell zone: $232.28 - $243.81
@@ -75,6 +77,7 @@ Backend: main.py HTTP API using Python ThreadingHTTPServer
 Database: SQLite tables for users, sessions, user_settings, and transcripts
 Data: Yahoo Finance chart/options/fundamentals endpoints and Google News RSS
 AI: OpenAI Responses API for structured news impact analysis, with local fallback scoring
+Prediction: Multi-factor score feeds a scenario-weighted bull/base/bear forecast layer
 ```
 
 ## Project Structure

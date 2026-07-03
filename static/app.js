@@ -116,6 +116,13 @@ const els = {
   factorSize: document.querySelector("#factorSize"),
   factorVolume: document.querySelector("#factorVolume"),
   factorDetails: document.querySelector("#factorDetails"),
+  scenarioForecastLabel: document.querySelector("#scenarioForecastLabel"),
+  baseCaseReturn: document.querySelector("#baseCaseReturn"),
+  bullCaseReturn: document.querySelector("#bullCaseReturn"),
+  bearCaseReturn: document.querySelector("#bearCaseReturn"),
+  forecastConfidence: document.querySelector("#forecastConfidence"),
+  scenarioBreakpoint: document.querySelector("#scenarioBreakpoint"),
+  scenarioDetails: document.querySelector("#scenarioDetails"),
   tradeBiasLabel: document.querySelector("#tradeBiasLabel"),
   buyZone: document.querySelector("#buyZone"),
   buyPointDate: document.querySelector("#buyPointDate"),
@@ -1652,7 +1659,7 @@ function scoreFromTechnical(analysis) {
   return clamp(50 + analysis.score * 10, 0, 100);
 }
 
-function calculateRiskLevel(total, analysis, research) {
+function calculateRiskLevel(total, analysis, research, forecast = null) {
   let risk = 50;
   if (analysis) {
     risk += analysis.volatility > 55 ? 18 : analysis.volatility > 35 ? 8 : -6;
@@ -1662,6 +1669,8 @@ function calculateRiskLevel(total, analysis, research) {
   const vix = research?.macro?.vix;
   if (Number.isFinite(atmIv)) risk += atmIv > 0.8 ? 14 : atmIv > 0.5 ? 7 : -4;
   if (Number.isFinite(vix)) risk += vix > 28 ? 14 : vix > 20 ? 6 : -6;
+  if (Number.isFinite(forecast?.cases?.bear?.return)) risk += forecast.cases.bear.return <= -25 ? 7 : 0;
+  if (Number.isFinite(forecast?.confidence)) risk += forecast.confidence < 45 ? 5 : forecast.confidence > 70 ? -3 : 0;
   risk -= total > 75 ? 6 : total < 40 ? -6 : 0;
 
   if (risk >= 68) return "High";
@@ -1912,6 +1921,192 @@ function calculateFactorModel(analysis, research) {
         text: `Volume factor uses stock participation and options flow; current score is ${Math.round(volume)}.`,
       },
     ],
+  };
+}
+
+function safeScore(value, fallback = 50) {
+  return Number.isFinite(value) ? clamp(value, 0, 100) : fallback;
+}
+
+function normalizeCaseWeights(cases) {
+  const minBase = 0.18;
+  let bull = clamp(cases.bull, 0.1, 0.7);
+  let bear = clamp(cases.bear, 0.1, 0.6);
+  let base = 1 - bull - bear;
+
+  if (base < minBase) {
+    const excess = minBase - base;
+    const tailWeight = Math.max(0.01, bull + bear);
+    bull = Math.max(0.1, bull - excess * (bull / tailWeight));
+    bear = Math.max(0.1, bear - excess * (bear / tailWeight));
+    base = minBase;
+  }
+
+  const total = bull + base + bear;
+  return {
+    bull: bull / total,
+    base: base / total,
+    bear: bear / total,
+  };
+}
+
+function forecastLabel(forecast) {
+  if (!forecast) return "--";
+  if (forecast.expectedReturn >= 15 && forecast.bullishProbability >= 68) return "Bull skew";
+  if (forecast.expectedReturn >= 6) return "Positive skew";
+  if (forecast.expectedReturn <= -8) return "Downside skew";
+  return "Balanced";
+}
+
+function calculateScenarioForecast(analysis, research, scores) {
+  if (!analysis) return null;
+
+  const totalScore = safeScore(scores.total);
+  const alphaScore = safeScore(scores.alpha);
+  const factorScore = safeScore(scores.factorTotal, totalScore);
+  const technicalScore = safeScore(scores.technical);
+  const macroScore = safeScore(scores.macro);
+  const optionsScore = safeScore(scores.options);
+  const sentimentScore = safeScore(scores.sentiment);
+  const revisionScore = safeScore(scores.revision);
+  const fundamentalScore = safeScore(scores.fundamental);
+  const flowScore = safeScore(scores.flow);
+  const currency = state.data?.currency || "USD";
+  const volatility = Number.isFinite(analysis.volatility) ? Math.max(analysis.volatility, 8) : 35;
+  const drawdown = Number.isFinite(analysis.drawdown) ? Math.abs(Math.min(analysis.drawdown, 0)) : 18;
+  const atmIv = research?.options?.atmIv;
+  const putCallVolume = research?.options?.putCallVolume;
+  const volumeRatio = analysis.volumeRatio;
+  const resistance = analysis.resistance;
+  const support = analysis.support;
+  const last = analysis.last?.close;
+
+  const riskDrag =
+    Math.max(0, volatility - 35) * 0.11 +
+    Math.max(0, drawdown - 20) * 0.09 +
+    (Number.isFinite(atmIv) && atmIv > 0.55 ? (atmIv - 0.55) * 12 : 0);
+  const flowBoost =
+    (Number.isFinite(volumeRatio) && volumeRatio >= 1.25 ? 1.5 : 0) +
+    (Number.isFinite(putCallVolume) && putCallVolume < 0.75 ? 1.2 : 0) -
+    (Number.isFinite(putCallVolume) && putCallVolume > 1.25 ? 1.4 : 0);
+
+  const baseReturn = clamp(
+    (totalScore - 50) * 0.22 +
+      (alphaScore - 50) * 0.16 +
+      (factorScore - 50) * 0.14 +
+      (technicalScore - 50) * 0.1 +
+      (macroScore - 50) * 0.08 +
+      (sentimentScore - 50) * 0.06 +
+      (revisionScore - 50) * 0.06 +
+      (fundamentalScore - 50) * 0.05 +
+      flowBoost -
+      riskDrag,
+    -28,
+    34,
+  );
+
+  const upsideVol = clamp(volatility * 0.34, 6, 18);
+  const downsideVol = clamp(volatility * 0.44 + drawdown * 0.12, 8, 28);
+  const breakoutDistance = Number.isFinite(last) && Number.isFinite(resistance)
+    ? clamp((resistance / last - 1) * 100, 0, 18)
+    : 6;
+  const supportDistance = Number.isFinite(last) && Number.isFinite(support)
+    ? clamp((last / support - 1) * 100, 0, 22)
+    : 8;
+  const bullReturn = clamp(baseReturn + upsideVol + breakoutDistance * 0.35, baseReturn + 5, 58);
+  const supportBreakDownside = -clamp(
+    volatility * 0.35 + supportDistance * 0.4 + Math.max(0, drawdown - 15) * 0.1,
+    8,
+    36,
+  );
+  const bearReturn = clamp(
+    Math.min(baseReturn - downsideVol - supportDistance * 0.2, supportBreakDownside),
+    -58,
+    baseReturn - 5,
+  );
+
+  const downsideStress = clamp(
+    Math.max(0, volatility - 30) / 220 +
+      drawdown / 320 +
+      (Number.isFinite(atmIv) && atmIv > 0.55 ? 0.05 : 0) +
+      (sentimentScore < 45 ? 0.04 : 0),
+    0,
+    0.24,
+  );
+  const weights = normalizeCaseWeights({
+    bull:
+      0.3 +
+      (totalScore - 50) / 170 +
+      (alphaScore - 50) / 240 +
+      (factorScore - 50) / 260 +
+      (macroScore - 50) / 360 +
+      (optionsScore - 50) / 360 -
+      downsideStress,
+    bear:
+      0.25 -
+      (totalScore - 50) / 220 -
+      (alphaScore - 50) / 340 +
+      downsideStress +
+      (sentimentScore < 45 ? 0.05 : 0),
+  });
+
+  const expectedReturn =
+    bullReturn * weights.bull +
+    baseReturn * weights.base +
+    bearReturn * weights.bear;
+  const bullishProbability = clamp((weights.bull + weights.base * (baseReturn >= 0 ? 0.65 : 0.42)) * 100, 5, 95);
+  const dataInputs = [
+    analysis?.points?.length > 80,
+    research?.fundamentals?.available,
+    research?.options?.available,
+    research?.macro?.available,
+    research?.relativeStrength?.available,
+    research?.earningsRevision?.available,
+    research?.institutionalFlow?.available,
+    scores.sentimentHasNews,
+  ].filter(Boolean).length;
+  const spread = bullReturn - bearReturn;
+  const confidence = clamp(34 + dataInputs * 7 - Math.max(0, spread - 42) * 0.28 - downsideStress * 45, 22, 90);
+  const sensitivity = 10 * 0.22;
+  const breakpoint = expectedReturn >= 0
+    ? `Bull case needs close above ${formatMoney(resistance, currency)}; fail below ${formatMoney(support, currency)}.`
+    : `Downside remains active until price reclaims ${formatMoney(resistance, currency)}.`;
+
+  const details = [
+    {
+      tone: baseReturn >= 6 ? "good" : baseReturn <= -6 ? "bad" : "watch",
+      text: `Base case is ${formatPercent(baseReturn, 1)} with ${formatPlainPercent(weights.base * 100, 0)} weight from composite, alpha, factor, and macro scores.`,
+    },
+    {
+      tone: "good",
+      text: `Bull case is ${formatPercent(bullReturn, 1)} with ${formatPlainPercent(weights.bull * 100, 0)} weight if resistance breaks and volume/options confirm demand.`,
+    },
+    {
+      tone: "bad",
+      text: `Bear case is ${formatPercent(bearReturn, 1)} with ${formatPlainPercent(weights.bear * 100, 0)} weight if support fails or volatility expands.`,
+    },
+    {
+      tone: confidence >= 65 ? "good" : confidence <= 45 ? "bad" : "watch",
+      text: `Confidence is ${Math.round(confidence)}/100 from ${dataInputs}/8 available data groups and a ${formatPlainPercent(spread, 1)} bull/bear spread.`,
+    },
+    {
+      tone: "watch",
+      text: `Sensitivity: every 10-point composite score change moves base-case return about ${formatPlainPercent(sensitivity, 1)} before probability shifts.`,
+    },
+  ];
+
+  return {
+    label: forecastLabel({ expectedReturn, bullishProbability }),
+    expectedReturn,
+    bullishProbability,
+    confidence,
+    breakpoint,
+    cases: {
+      bull: { return: bullReturn, probability: weights.bull },
+      base: { return: baseReturn, probability: weights.base },
+      bear: { return: bearReturn, probability: weights.bear },
+    },
+    details,
   };
 }
 
@@ -2314,7 +2509,7 @@ function renderVolumeFlow(analysis, research, currency) {
   );
 }
 
-function renderMultiFactor(analysis, research) {
+function renderMultiFactor(analysis, research, suppliedModel = null) {
   if (!analysis && !research) {
     els.multiFactorLabel.textContent = "--";
     setScore(els.factorMomentum, NaN);
@@ -2326,10 +2521,10 @@ function renderMultiFactor(analysis, research) {
     els.factorDetails.replaceChildren(
       ...listItems([{ tone: "watch", text: "Waiting for price history and factor metrics." }]),
     );
-    return;
+    return null;
   }
 
-  const model = calculateFactorModel(analysis, research);
+  const model = suppliedModel || calculateFactorModel(analysis, research);
   els.multiFactorLabel.textContent = model.label;
   els.multiFactorLabel.classList.remove("positive", "negative", "neutral");
   els.multiFactorLabel.classList.add(toneForScore(model.total));
@@ -2340,6 +2535,36 @@ function renderMultiFactor(analysis, research) {
   setScore(els.factorSize, model.scores.size);
   setScore(els.factorVolume, model.scores.volume);
   els.factorDetails.replaceChildren(...listItems(model.details));
+  return model;
+}
+
+function renderScenarioForecast(forecast) {
+  if (!forecast) {
+    els.scenarioForecastLabel.textContent = "--";
+    els.scenarioForecastLabel.classList.remove("positive", "negative", "neutral");
+    els.scenarioForecastLabel.classList.add("neutral");
+    els.baseCaseReturn.textContent = "--";
+    els.bullCaseReturn.textContent = "--";
+    els.bearCaseReturn.textContent = "--";
+    els.forecastConfidence.textContent = "--";
+    els.scenarioBreakpoint.textContent = "--";
+    els.scenarioDetails.replaceChildren(
+      ...listItems([{ tone: "watch", text: "Waiting for scorecard, market data, and factor inputs." }]),
+    );
+    return;
+  }
+
+  els.scenarioForecastLabel.textContent = forecast.label;
+  els.scenarioForecastLabel.classList.remove("positive", "negative", "neutral");
+  els.scenarioForecastLabel.classList.add(
+    forecast.expectedReturn >= 6 ? "positive" : forecast.expectedReturn <= -8 ? "negative" : "neutral",
+  );
+  els.baseCaseReturn.textContent = `${formatPercent(forecast.cases.base.return, 1)} / ${formatPlainPercent(forecast.cases.base.probability * 100, 0)}`;
+  els.bullCaseReturn.textContent = `${formatPercent(forecast.cases.bull.return, 1)} / ${formatPlainPercent(forecast.cases.bull.probability * 100, 0)}`;
+  els.bearCaseReturn.textContent = `${formatPercent(forecast.cases.bear.return, 1)} / ${formatPlainPercent(forecast.cases.bear.probability * 100, 0)}`;
+  els.forecastConfidence.textContent = `${Math.round(forecast.confidence)}/100`;
+  els.scenarioBreakpoint.textContent = forecast.breakpoint;
+  els.scenarioDetails.replaceChildren(...listItems(forecast.details));
 }
 
 function renderResearch() {
@@ -2372,13 +2597,32 @@ function renderResearch() {
     revisionScore * 0.16 +
     flowScore * 0.1 +
     technicalScore * 0.15;
-  const bullishProbability = clamp(12 + total * 0.78, 5, 95);
-  const expectedReturn = clamp((total - 50) * 0.55, -30, 35);
-  const risk = calculateRiskLevel(total, analysis, research);
+  const factorModel = analysis || research ? calculateFactorModel(analysis, research) : null;
+  const forecast = calculateScenarioForecast(analysis, research, {
+    total,
+    alpha: alphaScore,
+    factorTotal: factorModel?.total,
+    technical: technicalScore,
+    fundamental: fundamentalScore,
+    sentiment: sentimentScore,
+    macro: macroScore,
+    options: optionsScore,
+    revision: revisionScore,
+    flow: flowScore,
+    sentimentHasNews: sentiment.hasNews,
+  });
+  const bullishProbability = Number.isFinite(forecast?.bullishProbability)
+    ? forecast.bullishProbability
+    : clamp(12 + total * 0.78, 5, 95);
+  const expectedReturn = Number.isFinite(forecast?.expectedReturn)
+    ? forecast.expectedReturn
+    : clamp((total - 50) * 0.55, -30, 35);
+  const risk = calculateRiskLevel(total, analysis, research, forecast);
 
   renderNewsInsights(research, analysis, sentiment);
   renderVolumeFlow(analysis, research, currency);
-  renderMultiFactor(analysis, research);
+  renderMultiFactor(analysis, research, factorModel);
+  renderScenarioForecast(forecast);
 
   setScore(els.fundamentalScore, fundamental?.available ? fundamentalScore : NaN);
   setScore(els.sentimentScore, sentimentScore);
@@ -2400,7 +2644,11 @@ function renderResearch() {
   els.optionsScoreNote.textContent = options?.available
     ? `${options.daysToExpiration}D chain`
     : "Loading";
-  els.totalScoreNote.textContent = analysis ? `Technical ${Math.round(technicalScore)}` : "Waiting";
+  els.totalScoreNote.textContent = analysis
+    ? forecast
+      ? `Scenario conf. ${Math.round(forecast.confidence)}`
+      : `Technical ${Math.round(technicalScore)}`
+    : "Waiting";
   renderAlphaAndTrade(analysis, research, total, alphaScore);
 
   els.bullishProbability.textContent = analysis ? formatPercent(bullishProbability, 0).replace("+", "") : "--";
